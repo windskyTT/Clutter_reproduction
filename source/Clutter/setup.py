@@ -3,28 +3,35 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Installation script for the 'Clutter' python package."""
+"""Clutter extension 的 Python 打包脚本。
+
+用途：
+- 让 IsaacLab 或 `pip install -e source/Clutter` 能安装/发现 `Clutter` 包。
+- 读取 `config/extension.toml` 中的扩展元信息，避免版本、作者等信息重复维护。
+- 使用 `find_packages()` 包含迁移后的子包，例如 `Clutter.algo.ppo_onestep`。
+"""
 
 import os
 
 import toml
-from setuptools import setup
+from setuptools import find_packages, setup
 
-# Obtain the extension data from the extension.toml file
+# extension.toml 与 setup.py 位于同一个 extension 根目录下。
 EXTENSION_PATH = os.path.dirname(os.path.realpath(__file__))
-# Read the extension.toml file
+# 读取 extension 元数据，用于填充 setup() 的包信息。
 EXTENSION_TOML_DATA = toml.load(os.path.join(EXTENSION_PATH, "config", "extension.toml"))
 
-# Minimum dependencies required prior to installation
+# 最小 Python 依赖。IsaacLab/Isaac Sim 相关依赖由外部环境提供，不在这里安装。
 INSTALL_REQUIRES = [
     # NOTE: Add dependencies
     "psutil",
 ]
 
-# Installation operation
+# setuptools 打包配置。IsaacLab extension 加载和 editable install 都会用到这里。
 setup(
     name="Clutter",
-    packages=["Clutter"],
+    # Include migrated subpackages such as Clutter.algo.ppo_onestep.
+    packages=find_packages(),
     author=EXTENSION_TOML_DATA["package"]["author"],
     maintainer=EXTENSION_TOML_DATA["package"]["maintainer"],
     url=EXTENSION_TOML_DATA["package"]["repository"],

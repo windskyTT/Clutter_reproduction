@@ -1,0 +1,55 @@
+## UR5 机械臂 + Allegro 手
+
+name: "ur5_allegro" # 当前灵巧手配置的名称，会被 grasp.py 读作 hand_name。
+robotAssetFile: "ur5_allegro/ur5_allegro.urdf" # 仿真中加载的机器人 URDF 资产路径，路径相对 assetRoot。
+robotAssetFileVisualRealistic: "ur5_allegro/ur5_allegro.urdf" # 开启渲染随机化/写实显示时使用的 URDF，这里和普通模型相同。
+
+arm_dof_names: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"] 
+# UR5 机械臂的 6 个关节名，顺序需要和 URDF 中的机械臂 DoF 顺序一致。
+palm_link: "Allegro_base_link" # Allegro 手的手掌/基座 link 名，代码会用它获取手掌位姿。
+fingertips_link: ["link_3.0_tip", "link_7.0_tip", "link_11.0_tip", "link_15.0_tip"] # Allegro 四个指尖 link 名，用于计算指尖位置观测。
+
+eef_link: "ee_link" # 机械臂末端执行器 link 名，用于雅可比和末端位姿相关计算。
+num_arm_dofs: 6 # 机械臂自由度数量，UR5 是 6 自由度。
+palm_offset: [0.02, 0, 0.03] # 手掌中心相对 palm_link 的偏移量，用于计算 palm_center_pos。
+default_dof_pos: [0, -2, 1.8, 0, 1.57, -1.57, 0,0,0,0, 1.365,0,0,0, 0,0,0,0, 0,0,0,0] 
+# 机器人所有 DoF 的默认位置，前 6 个是 UR5，后 16 个是 Allegro 手部关节。
+num_obs_dict: # 各类观测项对应的维度，grasp.py 会按 observationType 组合总观测维度。
+  "armdof": 6 # 机械臂关节位置观测维度，对应 6 个 UR5 关节。
+  "handdof": 16 # 主动手部关节位置观测维度，对应 Allegro 的 16 个手指关节。
+  "fulldof": 22 # 全机器人关节观测维度，6 个机械臂关节加 16 个手部关节。
+  "eefpose": 7 # 末端执行器位姿观测维度，3 维位置加 4 维四元数。
+  "ftpos": 12 # 指尖位置观测维度，4 个指尖乘以 xyz 三维坐标。
+  "palmpose": 7 # 手掌位姿观测维度，3 维位置加 4 维四元数。
+  "handposerror": 16 # 主动手部关节位置误差观测维度，对应 16 个 Allegro 手指关节。
+  "lastact": 23 # 上一步动作观测维度，对应当前动作空间 23 维。
+  "objxyz": 3 # 物体 xyz 位置观测维度。
+  "objpose": 7 # 物体完整位姿观测维度，3 维位置加 4 维四元数。
+  "objinitpose": 7 # 物体初始位姿观测维度，3 维位置加 4 维四元数。
+  "pcfeat": 64 # 点云编码后的特征维度。
+  "refaction": 23 # 参考动作观测维度，和动作空间维度一致。
+  "objpcl": 1536 # 物体点云观测维度，512 个点乘以 xyz 三维坐标。
+numActions: 23 # 动作空间维度，7 个控制槽位加 16 个主动 Allegro 手部动作；代码中手部动作从索引 7 开始。
+hardware_active_hand_dof_names: # 硬件/数据接口使用的主动关节名列表，包含 UR5 机械臂关节和 Allegro 手部关节。
+  - "shoulder_pan_joint" # UR5 肩部平转关节。
+  - "shoulder_lift_joint" # UR5 肩部抬升关节 抬升本质上是绕着水平轴的旋转运动（俯仰/Pitch）
+  - "elbow_joint" # UR5 肘关节。
+  - "wrist_1_joint" # UR5 第 1 腕关节。
+  - "wrist_2_joint" # UR5 第 2 腕关节。
+  - "wrist_3_joint" # UR5 第 3 腕关节。
+  - "joint_0.0" # Allegro 第 0 个手部关节。
+  - "joint_1.0" # Allegro 第 1 个手部关节。
+  - "joint_2.0" # Allegro 第 2 个手部关节。
+  - "joint_3.0" # Allegro 第 3 个手部关节。
+  - "joint_4.0" # Allegro 第 4 个手部关节。
+  - "joint_5.0" # Allegro 第 5 个手部关节。
+  - "joint_6.0" # Allegro 第 6 个手部关节。
+  - "joint_7.0" # Allegro 第 7 个手部关节。
+  - "joint_8.0" # Allegro 第 8 个手部关节。
+  - "joint_9.0" # Allegro 第 9 个手部关节。
+  - "joint_10.0" # Allegro 第 10 个手部关节。
+  - "joint_11.0" # Allegro 第 11 个手部关节。
+  - "joint_12.0" # Allegro 第 12 个手部关节。
+  - "joint_13.0" # Allegro 第 13 个手部关节。
+  - "joint_14.0" # Allegro 第 14 个手部关节。
+  - "joint_15.0" # Allegro 第 15 个手部关节。

@@ -1,0 +1,38 @@
+## FR3 机械臂 + Panda 平行夹爪
+
+name: "fr3_panda_gripper" # 当前夹爪配置的名称，会被 grasp.py 读作 hand_name。
+robotAssetFile: "fr3_gripper/fr3_panda_gripper.urdf" # 仿真中加载的机器人 URDF 资产路径，路径相对 assetRoot。
+robotAssetFileVisualRealistic: "fr3_gripper/fr3_panda_gripper.urdf" # 开启渲染随机化/写实显示时使用的 URDF，这里和普通模型相同。
+
+arm_dof_names: ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7'] 
+# FR3 机械臂的 7 个关节名，顺序需要和 URDF 中的机械臂 DoF 顺序一致。
+palm_link: "fr3_link8" # 夹爪基座/手掌参考 link 名，代码会用它获取手掌位姿。
+fingertips_link: ["right_gripper"] # Panda 平行夹爪的指尖/夹持参考 link 名，用于计算指尖位置观测。
+passive_joints: # 被动/联动关节配置，代码会让这些关节跟随对应的主动关节运动。
+  panda_finger_joint2: # Panda 夹爪的第 2 个手指关节，是被动联动关节。
+    mimic: "panda_finger_joint1" # 该被动关节跟随第 1 个手指主动关节。
+    multiplier: 1 # 跟随主动关节时使用的比例系数。
+
+
+eef_link: "fr3_link8" # 机械臂末端执行器 link 名，用于雅可比和末端位姿相关计算。
+num_arm_dofs: 7 # 机械臂自由度数量，FR3 是 7 自由度。
+palm_offset: [0, 0, 0] # 手掌中心相对 palm_link 的偏移量，这里不额外偏移。
+default_dof_pos: [0, 0, 0, -1.6, 0, 1.6, 0, 0.04, 0.04] # 机器人所有 DoF 的默认位置，前 7 个是 FR3，后 2 个是 Panda 夹爪手指关节。
+num_obs_dict: # 各类观测项对应的维度，grasp.py 会按 observationType 组合总观测维度。
+  "armdof": 7 # 机械臂关节位置观测维度，对应 7 个 FR3 关节。
+  "handdof": 1 # 主动夹爪关节位置观测维度，对应 1 个主动手指关节。
+  "fulldof": 9 # 全机器人关节观测维度，7 个机械臂关节加 2 个夹爪关节。
+  "eefpose": 7 # 末端执行器位姿观测维度，3 维位置加 4 维四元数。
+  "ftpos": 3 # 指尖位置观测维度，1 个指尖乘以 xyz 三维坐标。
+  "palmpose": 7 # 手掌位姿观测维度，3 维位置加 4 维四元数。
+  "handposerror": 1 # 主动夹爪关节位置误差观测维度，对应 1 个主动手指关节。
+  "lastact": 8 # 上一步动作观测维度，对应当前动作空间 8 维。
+  "objxyz": 3 # 物体 xyz 位置观测维度。
+  "objpose": 7 # 物体完整位姿观测维度，3 维位置加 4 维四元数。
+  "objinitpose": 7 # 物体初始位姿观测维度，3 维位置加 4 维四元数。
+  "pcfeat": 64 # 点云编码后的特征维度。
+  "refaction": 8 # 参考动作观测维度，和动作空间维度一致。
+  "objpcl": 1536 # 物体点云观测维度，512 个点乘以 xyz 三维坐标。
+numActions: 8 # 动作空间维度，7 个机械臂动作加 1 个主动夹爪动作。
+hardware_active_hand_dof_names: # 硬件/夹爪侧主动关节名列表，主要用于和真实硬件或数据接口对齐。
+  - "panda_finger_joint1" # Panda 夹爪的主动手指关节。

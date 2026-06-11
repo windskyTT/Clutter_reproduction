@@ -1,0 +1,64 @@
+## FR3 机械臂 + Shadow 灵巧手配置
+
+name: "fr3_shadow" # 当前灵巧手配置的名称，会被 grasp.py 读作 hand_name。
+robotAssetFile: "shadow_hand_simple/fr3_shadow_right.urdf" # 仿真中加载的机器人 URDF 资产路径，路径相对 assetRoot。
+robotAssetFileVisualRealistic: "shadow_hand_simple/fr3_shadow_right_visual_realistic.urdf" # 开启渲染随机化/写实显示时使用的更写实 URDF。
+
+arm_dof_names: ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7'] 
+# FR3 机械臂的 7 个关节名，顺序需要和 URDF 中的机械臂 DoF 顺序一致。
+palm_link: "rh_wrist" # Shadow Hand 的手腕/手掌参考 link 名，代码会用它获取手掌位姿。
+fingertips_link: ["rh_thtip", "rh_fftip", "rh_mftip", "rh_rftip", "rh_lftip"] # 五个指尖 link 名，依次对应拇指、食指、中指、无名指和小指。
+passive_joints: # 被动/联动关节配置，代码会让这些关节跟随对应的主动关节运动。
+  rh_FFJ1: # 食指末端被动关节。
+    mimic: "rh_FFJ2" # 该被动关节跟随食指第 2 关节。
+    multiplier: 1 # 跟随主动关节时使用的比例系数。
+  rh_MFJ1: # 中指末端被动关节。
+    mimic: "rh_MFJ2" # 该被动关节跟随中指第 2 关节。
+    multiplier: 1 # 跟随主动关节时使用的比例系数。
+  rh_RFJ1: # 无名指末端被动关节。
+    mimic: "rh_RFJ2" # 该被动关节跟随无名指第 2 关节。
+    multiplier: 1 # 跟随主动关节时使用的比例系数。
+  rh_LFJ1: # 小指末端被动关节。
+    mimic: "rh_LFJ2" # 该被动关节跟随小指第 2 关节。
+    multiplier: 1 # 跟随主动关节时使用的比例系数。
+
+eef_link: "rh_wrist" # 末端执行器 link 名，这里使用 Shadow Hand 手腕 link。
+num_arm_dofs: 7 # 机械臂自由度数量，FR3 是 7 自由度。
+palm_offset: [0, 0, 0.05] # 手掌中心相对 palm_link 的偏移量，用于计算 palm_center_pos。
+default_dof_pos: [0, 0, 0, -1.6, 0, 1.6, 0, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] 
+# 机器人所有 DoF 的默认位置，前 7 个是 FR3，后 22 个是 Shadow 手部关节。
+num_obs_dict: # 各类观测项对应的维度，grasp.py 会按 observationType 组合总观测维度。
+  "armdof": 7 # 机械臂关节位置观测维度，对应 7 个 FR3 关节。
+  "handdof": 18 # 主动手部关节位置观测维度，对应 18 个主动 Shadow 手关节。
+  "fulldof": 29 # 全机器人关节观测维度，7 个机械臂关节加 22 个手部关节。
+  "eefpose": 7 # 末端执行器位姿观测维度，3 维位置加 4 维四元数。
+  "ftpos": 15 # 指尖位置观测维度，5 个指尖乘以 xyz 三维坐标。
+  "palmpose": 7 # 手掌位姿观测维度，3 维位置加 4 维四元数。
+  "handposerror": 18 # 主动手部关节位置误差观测维度，对应 18 个主动手指关节。
+  "lastact": 25 # 上一步动作观测维度，对应当前动作空间 25 维。
+  "objxyz": 3 # 物体 xyz 位置观测维度。
+  "objpose": 7 # 物体完整位姿观测维度，3 维位置加 4 维四元数。
+  "objinitpose": 7 # 物体初始位姿观测维度，3 维位置加 4 维四元数。
+  "pcfeat": 64 # 点云编码后的特征维度。
+  "refaction": 25 # 参考动作观测维度，和动作空间维度一致。
+  "objpcl": 1536 # 物体点云观测维度，512 个点乘以 xyz 三维坐标。
+numActions: 25 # 动作空间维度，7 个机械臂动作加 18 个主动手部动作。
+hardware_active_hand_dof_names: # 硬件/手部侧主动关节名列表，主要用于和真实硬件或数据接口对齐。
+  - "rh_FFJ4" # 食指第 4 关节。
+  - "rh_FFJ3" # 食指第 3 关节。
+  - "rh_FFJ2" # 食指第 2 关节。
+  - "rh_MFJ4" # 中指第 4 关节。
+  - "rh_MFJ3" # 中指第 3 关节。
+  - "rh_MFJ2" # 中指第 2 关节。
+  - "rh_RFJ4" # 无名指第 4 关节。
+  - "rh_RFJ3" # 无名指第 3 关节。
+  - "rh_RFJ2" # 无名指第 2 关节。
+  - "rh_LFJ5" # 小指第 5 关节。
+  - "rh_LFJ4" # 小指第 4 关节。
+  - "rh_LFJ3" # 小指第 3 关节。
+  - "rh_LFJ2" # 小指第 2 关节。
+  - "rh_THJ5" # 拇指第 5 关节。
+  - "rh_THJ4" # 拇指第 4 关节。
+  - "rh_THJ3" # 拇指第 3 关节。
+  - "rh_THJ2" # 拇指第 2 关节。
+  - "rh_THJ1" # 拇指第 1 关节。

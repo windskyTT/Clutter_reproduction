@@ -1,0 +1,40 @@
+## FR3 机械臂 + DClaw 三指夹爪
+
+name: "fr3_dclaw_gripper" # 当前手爪配置的名称，会被 grasp.py 读作 hand_name。
+robotAssetFile: "fr3_gripper/fr3_dclaw_gripper.urdf" # 仿真中加载的机器人 URDF 资产路径，路径相对 assetRoot。
+robotAssetFileVisualRealistic: "fr3_gripper/fr3_dclaw_gripper.urdf" # 开启渲染随机化/写实显示时使用的 URDF，这里和普通模型相同。
+
+arm_dof_names: ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7'] # FR3 机械臂的 7 个关节名，顺序需要和 URDF 中的机械臂 DoF 顺序一致。
+palm_link: "base_link" # 手掌/夹爪基座 link 名，代码会用它获取手掌位姿。
+fingertips_link: ['link_f1_3', 'link_f2_3', 'link_f3_3'] # 三个指尖 link 名，每个手指末端一个，用于计算指尖位置观测。
+eef_link: "fr3_link8" # 机械臂末端执行器 link 名，用于雅可比和末端位姿相关计算。
+num_arm_dofs: 7 # 机械臂自由度数量，FR3 是 7 自由度。
+palm_offset: [0, 0, 0] # 手掌中心相对 palm_link 的偏移量，这里不额外偏移。
+default_dof_pos: [0, 0, 0, -1.6, 0, 1.6, 0, 0,0,0,0,0,0,0,0,0] # 机器人所有 DoF 的默认位置，前 7 个是 FR3，后 9 个是 DClaw 三指关节。
+num_obs_dict: # 各类观测项对应的维度，grasp.py 会按 observationType 组合总观测维度。
+  "armdof": 7 # 机械臂关节位置观测维度，对应 7 个 FR3 关节。
+  "handdof": 9 # 主动手爪关节位置观测维度，对应 DClaw 的 9 个手指关节。
+  "handavgdof": 9 # 预留的手爪相关观测维度，本配置按 9 个手爪关节计。
+  "fulldof": 16 # 全机器人关节观测维度，7 个机械臂关节加 9 个手爪关节。
+  "eefpose": 7 # 末端执行器位姿观测维度，3 维位置加 4 维四元数。
+  "ftpos": 9 # 指尖位置观测维度，3 个指尖乘以 xyz 三维坐标。
+  "palmpose": 7 # 手掌位姿观测维度，3 维位置加 4 维四元数。
+  "handposerror": 9 # 手爪关节位置误差观测维度，对应 9 个手爪关节。
+  "lastact": 16 # 上一步动作观测维度，对应当前动作空间 16 维。
+  "objxyz": 3 # 物体 xyz 位置观测维度。
+  "objpose": 7 # 物体完整位姿观测维度，3 维位置加 4 维四元数。
+  "objinitpose": 7 # 物体初始位姿观测维度，3 维位置加 4 维四元数。
+  "pcfeat": 64 # 点云编码后的特征维度。
+  "refaction": 16 # 参考动作观测维度，和动作空间维度一致。
+  "objpcl": 1536 # 物体点云观测维度，512 个点乘以 xyz 三维坐标。
+numActions: 16 # 动作空间维度，7 个机械臂动作加 9 个手爪动作。
+hardware_active_hand_dof_names: # 硬件/手爪侧主动关节名列表，主要描述 DClaw 的 9 个主动手指关节。
+  - "joint_f1_0" # 第 1 根手指的第 0 个关节。
+  - "joint_f1_1" # 第 1 根手指的第 1 个关节。
+  - "joint_f1_2" # 第 1 根手指的第 2 个关节。
+  - "joint_f2_0" # 第 2 根手指的第 0 个关节。
+  - "joint_f2_1" # 第 2 根手指的第 1 个关节。
+  - "joint_f2_2" # 第 2 根手指的第 2 个关节。
+  - "joint_f3_0" # 第 3 根手指的第 0 个关节。
+  - "joint_f3_1" # 第 3 根手指的第 1 个关节。
+  - "joint_f3_2" # 第 3 根手指的第 2 个关节。

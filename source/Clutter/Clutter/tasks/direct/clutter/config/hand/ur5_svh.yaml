@@ -1,0 +1,80 @@
+## UR5 机械臂 + SVH 手
+
+name: "ur5_svh" # 当前灵巧手配置的名称，会被 grasp.py 读作 hand_name。
+robotAssetFile: "ur5_svh/ur5_svh.urdf" # 仿真中加载的机器人 URDF 资产路径，路径相对 assetRoot。
+robotAssetFileVisualRealistic: "ur5_svh/ur5_svh.urdf" # 开启渲染随机化/写实显示时使用的 URDF，这里和普通模型相同。
+
+arm_dof_names: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"] 
+# UR5 机械臂的 6 个关节名，顺序需要和 URDF 中的机械臂 DoF 顺序一致。
+palm_link: "svh_base_link" # SVH 手的手掌/基座 link 名，代码会用它获取手掌位姿。
+fingertips_link: ["right_hand_c", "right_hand_t", "right_hand_s", "right_hand_r", "right_hand_q"] # 五个指尖/远端 link 名，用于计算指尖位置观测。
+passive_joints: # 被动/联动关节配置，代码会让这些关节跟随对应的主动关节运动。
+  right_hand_j5: # 拇指对掌相关的被动关节。
+    mimic: "right_hand_Thumb_Opposition" # 该被动关节跟随拇指对掌主动关节。
+    multiplier: 1 # 跟随主动关节时使用的比例系数。
+  right_hand_j3: # 拇指弯曲相关的第 1 个被动关节。
+    mimic: "right_hand_Thumb_Flexion" # 该被动关节跟随拇指弯曲主动关节。
+    multiplier: 1.01511 # 跟随主动关节时使用的比例系数。
+  right_hand_j4: # 拇指弯曲相关的第 2 个被动关节。
+    mimic: "right_hand_Thumb_Flexion" # 该被动关节跟随拇指弯曲主动关节。
+    multiplier: 1.44889 # 跟随主动关节时使用的比例系数。
+  right_hand_j14: # 食指远端被动关节。
+    mimic: "right_hand_Index_Finger_Distal" # 该被动关节跟随食指远端主动关节。
+    multiplier: 1.0450 # 跟随主动关节时使用的比例系数。
+  right_hand_j15: # 中指远端被动关节。
+    mimic: "right_hand_Middle_Finger_Distal" # 该被动关节跟随中指远端主动关节。
+    multiplier: 1.0454 # 跟随主动关节时使用的比例系数。
+  right_hand_j12: # 无名指相关的第 1 个被动关节。
+    mimic: "right_hand_Ring_Finger" # 该被动关节跟随无名指主动关节。
+    multiplier: 1.3588 # 跟随主动关节时使用的比例系数。
+  right_hand_j16: # 无名指相关的第 2 个被动关节。
+    mimic: "right_hand_Ring_Finger" # 该被动关节跟随无名指主动关节。
+    multiplier: 1.42093 # 跟随主动关节时使用的比例系数。
+  right_hand_j13: # 小指相关的第 1 个被动关节。
+    mimic: "right_hand_Pinky" # 该被动关节跟随小指主动关节。
+    multiplier: 1.3588 # 跟随主动关节时使用的比例系数。
+  right_hand_j17: # 小指相关的第 2 个被动关节。
+    mimic: "right_hand_Pinky" # 该被动关节跟随小指主动关节。
+    multiplier: 1.42307 # 跟随主动关节时使用的比例系数。
+  right_hand_index_spread: # 食指外展/张开联动关节。
+    mimic: "right_hand_Finger_Spread" # 该被动关节跟随手指张开主动关节。
+    multiplier: 0.5 # 跟随主动关节时使用的比例系数。
+  right_hand_ring_spread: # 无名指外展/张开联动关节。
+    mimic: "right_hand_Finger_Spread" # 该被动关节跟随手指张开主动关节。
+    multiplier: 0.5 # 跟随主动关节时使用的比例系数。
+eef_link: "ee_link" # 机械臂末端执行器 link 名，用于雅可比和末端位姿相关计算。
+num_arm_dofs: 6 # 机械臂自由度数量，UR5 是 6 自由度。
+palm_offset: [0.045, 0, 0.01] # 手掌中心相对 palm_link 的偏移量，用于计算 palm_center_pos。
+default_dof_pos: [0, -2, 1.8, 0, 1.57, -1.57, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] # 机器人所有 DoF 的默认位置，前 6 个是 UR5，后 20 个是 SVH 手部关节。
+num_obs_dict: # 各类观测项对应的维度，grasp.py 会按 observationType 组合总观测维度。
+  "armdof": 6 # 机械臂关节位置观测维度，对应 6 个 UR5 关节。
+  "handdof": 9 # 主动手部关节位置观测维度，对应 9 个 SVH 主动手指关节。
+  "fulldof": 26 # 全机器人关节观测维度，6 个机械臂关节加 20 个手部关节。
+  "eefpose": 7 # 末端执行器位姿观测维度，3 维位置加 4 维四元数。
+  "ftpos": 15 # 指尖位置观测维度，5 个指尖乘以 xyz 三维坐标。
+  "palmpose": 7 # 手掌位姿观测维度，3 维位置加 4 维四元数。
+  "handposerror": 9 # 主动手部关节位置误差观测维度，对应 9 个 SVH 主动手指关节。
+  "lastact": 16 # 上一步动作观测维度，对应当前动作空间 16 维。
+  "objxyz": 3 # 物体 xyz 位置观测维度。
+  "objpose": 7 # 物体完整位姿观测维度，3 维位置加 4 维四元数。
+  "objinitpose": 7 # 物体初始位姿观测维度，3 维位置加 4 维四元数。
+  "pcfeat": 64 # 点云编码后的特征维度。
+  "refaction": 16 # 参考动作观测维度，和动作空间维度一致。
+  "objpcl": 1536 # 物体点云观测维度，512 个点乘以 xyz 三维坐标。
+numActions: 16 # 动作空间维度，7 个控制槽位加 9 个主动 SVH 手部动作；代码中手部动作从索引 7 开始。
+hardware_active_hand_dof_names: # 硬件/数据接口使用的主动关节名列表，包含 UR5 机械臂关节和 SVH 手部关节。
+  - "shoulder_pan_joint" # UR5 肩部平转关节。
+  - "shoulder_lift_joint" # UR5 肩部抬升关节。
+  - "elbow_joint" # UR5 肘关节。
+  - "wrist_1_joint" # UR5 第 1 腕关节。
+  - "wrist_2_joint" # UR5 第 2 腕关节。
+  - "wrist_3_joint" # UR5 第 3 腕关节。
+  - 'right_hand_Thumb_Opposition' # SVH 拇指对掌主动关节。
+  - 'right_hand_Thumb_Flexion' # SVH 拇指弯曲主动关节。
+  - 'right_hand_Index_Finger_Proximal' # SVH 食指近端主动关节。
+  - 'right_hand_Index_Finger_Distal' # SVH 食指远端主动关节。
+  - 'right_hand_Finger_Spread' # SVH 手指张开/外展主动关节。
+  - 'right_hand_Pinky' # SVH 小指主动关节。
+  - 'right_hand_Ring_Finger' # SVH 无名指主动关节。
+  - 'right_hand_Middle_Finger_Proximal' # SVH 中指近端主动关节。
+  - 'right_hand_Middle_Finger_Distal' # SVH 中指远端主动关节。

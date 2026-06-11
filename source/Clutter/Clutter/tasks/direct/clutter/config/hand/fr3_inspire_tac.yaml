@@ -1,0 +1,58 @@
+## FR3 机械臂 + Inspire 灵巧手
+
+name: "fr3_inspire_tac" # 当前手爪配置的名称，会被 grasp.py 读作 hand_name。
+robotAssetFile: "inspire_tac/fr3_inspire_tac_L_right_safety.urdf" # 仿真中加载的机器人 URDF 资产路径，路径相对 assetRoot。
+robotAssetFileVisualRealistic: "inspire_tac/fr3_inspire_tac_L_right_safety_visual_realistic.urdf" 
+# 开启渲染随机化/写实显示时使用的更写实 URDF 资产路径，路径相对 assetRoot 
+
+arm_dof_names: ['fr3_joint1', 'fr3_joint2', 'fr3_joint3', 'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7'] 
+# FR3 机械臂的 7 个关节名，顺序需要和 URDF 中的机械臂 DoF 顺序一致
+palm_link: "base_link" # 手掌/灵巧手基座 link 名，代码会用它获取手掌位姿 
+fingertips_link: ['right_thumb_4', 'right_index_2', 'right_middle_2', 'right_ring_2', 'right_little_2'] 
+# 五个指尖 link 名，用于计算指尖位置观测
+passive_joints: # 被动/联动关节配置，代码会让这些关节跟随对应的主动关节运动。
+  right_thumb_3_joint: # 拇指第 3 个被动关节。
+    mimic: "right_thumb_2_joint" # 该被动关节跟随拇指第 2 个主动关节。 mimic 模仿
+    multiplier: 0.6 # 跟随主动关节时使用的比例系数。
+  right_thumb_4_joint: # 拇指末端被动关节。
+    mimic: "right_thumb_2_joint" # 该被动关节同样跟随拇指第 2 个主动关节。
+    multiplier: 0.8 # 跟随主动关节时使用的比例系数。
+  right_index_2_joint: # 食指末端被动关节。
+    mimic: "right_index_1_joint" # 该被动关节跟随食指第 1 个主动关节。
+    multiplier: 1.05 # 跟随主动关节时使用的比例系数。
+  right_middle_2_joint: # 中指末端被动关节。
+    mimic: "right_middle_1_joint" # 该被动关节跟随中指第 1 个主动关节。
+    multiplier: 1.05 # 跟随主动关节时使用的比例系数。
+  right_ring_2_joint: # 无名指末端被动关节。
+    mimic: "right_ring_1_joint" # 该被动关节跟随无名指第 1 个主动关节。
+    multiplier: 1.05 # 跟随主动关节时使用的比例系数。
+  right_little_2_joint: # 小指末端被动关节。
+    mimic: "right_little_1_joint" # 该被动关节跟随小指第 1 个主动关节。
+    multiplier: 1.18 # 跟随主动关节时使用的比例系数。
+eef_link: "fr3_link8" # 机械臂末端执行器 link 名，用于雅可比和末端位姿相关计算。
+num_arm_dofs: 7 # 机械臂自由度数量，FR3 是 7 自由度。
+palm_offset: [0, 0.02, -0.05] # 手掌中心相对 palm_link 的偏移量，用于计算 palm_center_pos。
+default_dof_pos: [0, 0, 0, -1.6, 0, 1.6, 0, 0,0,0,0, 0,0,0,0, 0,0,0,0] # 机器人所有 DoF 的默认位置，前 7 个是 FR3，后 12 个是 Inspire 手部关节。
+num_obs_dict: # 各类观测项对应的维度，grasp.py 会按 observationType 组合总观测维度。
+  "armdof": 7 # 机械臂关节位置观测维度，对应 7 个 FR3 关节。
+  "handdof": 6 # 主动手部关节位置观测维度，对应 6 个主动手指关节。
+  "fulldof": 19 # 全机器人关节观测维度，7 个机械臂关节加 12 个手部关节。
+  "eefpose": 7 # 末端执行器位姿观测维度，3 维位置加 4 维四元数。
+  "ftpos": 15 # 指尖位置观测维度，5 个指尖乘以 xyz 三维坐标。
+  "palmpose": 7 # 手掌位姿观测维度，3 维位置加 4 维四元数。
+  "handposerror": 6 # 主动手部关节位置误差观测维度，对应 6 个主动手指关节。
+  "lastact": 13 # 上一步动作观测维度，对应当前动作空间 13 维。
+  "objxyz": 3 # 物体 xyz 位置观测维度。
+  "objpose": 7 # 物体完整位姿观测维度，3 维位置加 4 维四元数。
+  "objinitpose": 7 # 物体初始位姿观测维度，3 维位置加 4 维四元数。
+  "pcfeat": 64 # 点云编码后的特征维度。
+  "refaction": 13 # 参考动作观测维度，和动作空间维度一致。
+  "objpcl": 1536 # 物体点云观测维度，512 个点乘以 xyz 三维坐标。
+numActions: 13 # 动作空间维度，7 个机械臂动作加 6 个主动手部动作。
+hardware_active_hand_dof_names: # 硬件/手部侧主动关节名列表，主要用于和真实硬件或数据接口对齐。
+  - 'right_little_1_joint' # 小指主动关节。
+  - 'right_ring_1_joint' # 无名指主动关节。
+  - 'right_middle_1_joint' # 中指主动关节。
+  - 'right_index_1_joint' # 食指主动关节。
+  - 'right_thumb_2_joint' # 拇指弯曲主动关节。
+  - 'right_thumb_1_joint' # 拇指侧摆/根部主动关节。
