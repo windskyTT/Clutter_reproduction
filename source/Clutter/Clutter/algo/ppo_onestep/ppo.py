@@ -18,20 +18,14 @@ from __future__ import annotations
 import os
 import statistics
 import time
-from collections import deque
-from typing import Any
+from collections import deque # 导入双端队列，用于构建固定长度的滑动窗口
+from typing import Any # 导入泛型类型 Any，用于类型注解
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
-try:
-    # IsaacLab 2.x 使用 gymnasium；保留 gym fallback 是为了轻量单元测试更宽容。
-    from gymnasium.spaces import Dict as DictSpace
-    from gymnasium.spaces import Space
-except ModuleNotFoundError:  # pragma: no cover - IsaacLab normally provides gymnasium.
-    from gym.spaces import Dict as DictSpace
-    from gym.spaces import Space
+from gymnasium.spaces import Dict as DictSpace
+from gymnasium.spaces import Space
 
 try:
     # 训练需要 TensorBoard；播放 checkpoint 时不需要，因此这里做可选导入。

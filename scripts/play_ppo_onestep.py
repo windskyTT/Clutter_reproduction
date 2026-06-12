@@ -15,6 +15,7 @@ from __future__ import annotations # 开启延迟评估类型注解。这允许�
 import argparse
 import math
 import sys
+import traceback
 from pathlib import Path
 
 # 允许脚本在未 pip install extension 时直接从仓库运行。
@@ -44,6 +45,16 @@ def parse_args() -> argparse.Namespace:
     )
     # 评估的轮数。默认执行 10 轮 one-step 抓取评估，覆盖所有测试对象。
     parser.add_argument("--episodes", type=int, default=10, help="Number of one-step evaluation rounds.")
+    parser.add_argument(
+        "--checkpoint_preset",
+        type=str,
+        default="auto",
+        choices=("auto", "none", "demograsp_inspire_vision"),
+        help=(
+            "Compatibility preset for old DemoGrasp checkpoints. "
+            "'auto' applies the Inspire vision preset when the checkpoint file is inspire.pt."
+        ),
+    )
     parser.add_argument("--disable_fabric", action="store_true", default=False, help="Disable IsaacLab fabric.")
     AppLauncher.add_app_launcher_args(parser)
     return parser.parse_args()
@@ -64,7 +75,12 @@ from isaaclab_tasks.utils import parse_env_cfg
 import Clutter.tasks.direct.clutter  # noqa: F401
 from Clutter.algo import ppo_onestep
 from Clutter.tasks.direct.clutter.agents.ppo_onestep_cfg import default_ppo_onestep_cfg
-from Clutter.utils.paths import PROJECT_ROOT as CLUTTER_ROOT
+from Clutter.utils.paths import CLUTTER_ROOT
+
+
+def log_stage(message: str) -> None:
+    """打印播放阶段日志，并立即 flush，方便定位 IsaacSim 启动后的卡点/异常点。"""
+    print(f"[PLAY] {message}", flush=True)
 
 
 def infer_planner_action_dim(env) -> int:
@@ -100,26 +116,119 @@ def resolve_checkpoint(path_text: str) -> Path:
     return ckpt_path
 
 
+def obs_dim_from_type(obs_type: str, points_per_object: int) -> int:
+    """按 ClutterEnv.compute_required_observations() 的拼接规则计算观测维度。
+
+    旧 DemoGrasp 用 Hydra 根据 `observationType` 自动累加维度；迁移到 IsaacLab
+    Python cfg 后，脚本覆盖观测类型时也需要同步更新 `num_observations` 和
+    `observation_space`，否则 env 的实际观测和 Gym space 会不一致。
+    """
+    dims = {
+        "armdof": 7,
+        "handdof": 6,
+        "fulldof": 19,
+        "eefpose": 7,
+        "ftpos": 15,
+        "palmpose": 7,
+        "lastact": 13,
+        "objxyz": 3,
+        "objpose": 7,
+        "objinitpose": 7,
+        "objpcl": int(points_per_object) * 3,
+    }
+    total = 0
+    for item in obs_type.split("+"):
+        item = item.strip()
+        if not item:
+            continue
+        if item not in dims:
+            raise ValueError(f"Unsupported observation item {item!r} in obs_type={obs_type!r}.")
+        total += dims[item]
+    return total
+
+
+def should_apply_demograsp_inspire_preset(checkpoint: Path) -> bool:
+    """判断是否自动套用旧 DemoGrasp Inspire 视觉 checkpoint 的运行参数。"""
+    if args_cli.checkpoint_preset == "none":
+        return False
+    if args_cli.checkpoint_preset == "demograsp_inspire_vision":
+        return True
+    return checkpoint.name == "inspire.pt"
+
+
+def apply_demograsp_inspire_preset(env_cfg) -> dict:
+    """应用旧 Gym 指令中 `ckpt/inspire.pt` 对应的 Clutter/IsaacLab 覆盖项。
+
+    旧命令核心覆盖项：
+    - observationType="eefpose+objinitpose+objpcl"
+    - armController=pose
+    - enablePointCloud=True
+    - randomizeTrackingReference=True
+    - randomizeGraspPose=True
+    - train.params.is_vision=True
+
+    在新脚本里，环境覆盖写入 `env_cfg`，训练/网络覆盖作为 dict 返回给
+    `default_ppo_onestep_cfg()`。
+    """
+    env_cfg.obs_type = "eefpose+objinitpose+objpcl"
+    env_cfg.enable_point_cloud = True
+    env_cfg.arm_controller = "pose"
+    env_cfg.randomize_tracking_reference = True
+    env_cfg.randomize_grasp_pose = True
+    env_cfg.episode_length_steps = 50
+    env_cfg.episode_length_s = env_cfg.episode_length_steps * env_cfg.decimation / 60.0
+
+    obs_dim = obs_dim_from_type(env_cfg.obs_type, env_cfg.points_per_object)
+    env_cfg.num_observations = obs_dim
+    env_cfg.observation_space = obs_dim
+
+    # checkpoint 的 PointNet 输入仍是 512x3；PointNet 内部会拼接去均值坐标，
+    # 因此权重中第一层卷积显示为 6 维输入，这是旧实现的正常行为。
+    return {
+        "is_vision": True,
+        "policy": {
+            "pc_shape": [int(env_cfg.points_per_object), 3],
+            "pc_emb_dim": 128,
+        },
+    }
+
+
 def main() -> None:
     """创建环境、加载策略权重，并运行确定性推理。环境初始化与加载推理"""
     torch.manual_seed(args_cli.seed)
     env = None
     try:
+        checkpoint = resolve_checkpoint(args_cli.checkpoint)
         # 从 Gym 注册表读取环境配置，并应用命令行覆盖项。
+        log_stage(f"Parsing env cfg: task={args_cli.task}, num_envs={args_cli.num_envs}")
         env_cfg = parse_env_cfg( # 创建底层物理仿真环境
             args_cli.task,
             device=args_cli.device,
             num_envs=args_cli.num_envs,
             use_fabric=not args_cli.disable_fabric,
         )
+        train_overrides = {"times_testing_all_objects": args_cli.episodes}
+        if should_apply_demograsp_inspire_preset(checkpoint):
+            log_stage("Applying DemoGrasp Inspire vision checkpoint preset.")
+            train_overrides = {
+                **train_overrides,
+                **apply_demograsp_inspire_preset(env_cfg),
+            }
+
+        log_stage(
+            "Creating Gym env: "
+            f"obs_type={env_cfg.obs_type}, obs_dim={env_cfg.num_observations}, "
+            f"arm_controller={env_cfg.arm_controller}, point_cloud={env_cfg.enable_point_cloud}"
+        )
         env = gym.make(args_cli.task, cfg=env_cfg)
-        checkpoint = resolve_checkpoint(args_cli.checkpoint)
+        log_stage("Gym env created.")
 
         # test=True 会让 PPO runner 进入 eval 分支，不创建 TensorBoard writer。告诉配置生成器这是测试模式。
         # 内部逻辑可能会关闭探索噪声（Exploration Noise），使得神经网络直接输出当前最优的确定性动作（Argmax），并且不需要收集缓冲区数据进行反向传播
         # overrides 将命令行传入的测试轮数强制覆盖进配置字典里
-        train_cfg = default_ppo_onestep_cfg(test=True, overrides={"times_testing_all_objects": args_cli.episodes})
+        train_cfg = default_ppo_onestep_cfg(test=True, overrides=train_overrides)
         # 实例化 PPO 算法 注意这里的 log_dir=None，因为只是播放模型，不需要写出 TensorBoard 日志或保存新的权重
+        log_stage("Creating PPO runner.")
         runner = ppo_onestep.PPO(
             vec_env=env.unwrapped,
             actor_critic_class=ppo_onestep.ActorCritic,
@@ -128,18 +237,24 @@ def main() -> None:
             apply_reset=False,
             action_dim=infer_planner_action_dim(env),
         )
-        print(f"[INFO] Loading policy checkpoint from {checkpoint}")
+        log_stage(f"Loading policy checkpoint from {checkpoint}")
         # 核心步骤。调用算法的 test 方法，内部会执行 torch.load，把 checkpoint 里的神经网络权重覆盖到当前创建的模型中，并切换为 eval() 模式
         runner.test(str(checkpoint))
+        log_stage("Running policy evaluation.")
         runner.run()
     finally:
         if env is not None:
+            log_stage("Closing Gym env.")
             env.close()
 
 
 if __name__ == "__main__":
     try:
         main()
+    except Exception:
+        print("[ERROR] play_ppo_onestep.py failed with an exception:", file=sys.stderr, flush=True)
+        traceback.print_exc()
+        raise
     finally:
         # 推理结束或异常退出时都要关闭 Isaac Sim。
         simulation_app.close()

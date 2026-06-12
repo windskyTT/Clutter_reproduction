@@ -11,8 +11,6 @@ IsaacLab 不再在环境代码里临时 load_asset，而是先把资产写成 cf
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
@@ -21,16 +19,16 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.utils import configclass
 
+from Clutter.utils.paths import ASSET_ROOT, REFERENCE_ROOT
 
-# 工程根目录和资产根目录。这样脚本无论从哪里启动，资产都指向 Clutter 仓库内部。
-_PROJECT_ROOT = Path(__file__).resolve().parents[6]
-_ASSET_ROOT = _PROJECT_ROOT / "assets"
 
 # DemoGrasp 默认手型：FR3 机械臂 + Inspire tactile hand。
-_ROBOT_ASSET = _ASSET_ROOT / "inspire_tac/fr3_inspire_tac_L_right_safety.urdf"
-_TRACKING_REFERENCE = _ASSET_ROOT / "references/grasp_ref_inspire.pkl"
-_OBJECT_LIST = _ASSET_ROOT / "union_ycb_unidex/union_ycb_debugset.yaml"
-_OBJECT_NAME_LIST = _ASSET_ROOT / "union_ycb_unidex/union_ycb_debugset_names.yaml"
+_ROBOT_ASSET = ASSET_ROOT / "inspire_tac/fr3_inspire_tac_L_right_safety.urdf"
+_TRACKING_REFERENCE = REFERENCE_ROOT / "grasp_ref_inspire.pkl"
+_OBJECT_LIST = ASSET_ROOT / "union_ycb_unidex/union_ycb_debugset.yaml"
+_OBJECT_NAME_LIST = ASSET_ROOT / "union_ycb_unidex/union_ycb_debugset_names.yaml"
+
+_OBJECT_USD_CACHE = ASSET_ROOT / "generated/union_ycb_unidex_usd"
 
 # 旧 hand/fr3_inspire_tac.yaml 里的默认关节位置。前 7 维是 FR3，后 12 维是 Inspire 手。
 _DEFAULT_DOF_POS = {
@@ -66,8 +64,11 @@ class ClutterEnvCfg(DirectRLEnvCfg):
     num_envs = 8192
     env_spacing = 1.2
     episode_length_steps = 50
-    decimation = 1
-    episode_length_s = episode_length_steps / 60.0
+    # DemoGrasp 的 sim.decimation=20：一个 RL/control step 内执行 20 个物理步。
+    # DirectRLEnv 用 `episode_length_s / (sim.dt * decimation)` 反推 episode 步数，
+    # 因此这里要把秒数同步放大，保持 50 个控制步不变。
+    decimation = 20
+    episode_length_s = episode_length_steps * decimation / 60.0
     action_space = 13
     observation_space = 27
     state_space = 0
@@ -75,8 +76,23 @@ class ClutterEnvCfg(DirectRLEnvCfg):
     # 仿真步长对应旧配置里的 60 Hz 控制节奏。
     sim: SimulationCfg = SimulationCfg(dt=1 / 60, render_interval=decimation)
 
+    # GUI 中的全局视觉地面。IsaacLab 的 GroundPlaneCfg 默认使用黑色 grid-world USD；
+    # 这里用本地 Cuboid 几何复刻黑底网格，避免离线运行时访问 Nucleus/S3 资源失败。
+    enable_grid_ground = True
+    grid_ground_prim_path = "/World/GridGround"
+    grid_ground_size = 40.0
+    grid_ground_spacing = 0.5
+    grid_ground_line_width = 0.012
+    grid_ground_line_height = 0.002
+    grid_ground_z = 0.0
+    grid_ground_base_color = (0.005, 0.005, 0.005)
+    grid_ground_line_color = (0.32, 0.32, 0.32)
+    grid_ground_axis_line_color = (0.62, 0.62, 0.62)
+
     # 旧 tasks/config.yaml 顶层 num_envs=8192；命令行仍可通过 --num_envs 覆盖。
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=num_envs, env_spacing=env_spacing, replicate_physics=True)
+    # 多物体复刻需要每个 env 生成不同 Object 资产，因此关闭 replicate_physics；
+    # 否则 IsaacLab 会把 env_0 的同一个物体复制到所有 env。
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=num_envs, env_spacing=env_spacing, replicate_physics=False)
 
     # -----------------------------
     # 机器人、物体和桌面资产
@@ -89,6 +105,12 @@ class ClutterEnvCfg(DirectRLEnvCfg):
             merge_fixed_joints=False,
             convert_mimic_joints_to_normal_joints=True,
             self_collision=False,
+            # IsaacLab 5.1 的 URDF converter 要求显式给出 joint drive gains；
+            # 这些值用于 URDF -> USD 转换阶段的 drive 属性，下面的 actuator cfg
+            # 则用于运行时关节目标控制，两者保持一致便于调试。
+            joint_drive=sim_utils.UrdfConverterCfg.JointDriveCfg(
+                gains=sim_utils.UrdfConverterCfg.JointDriveCfg.PDGainsCfg(stiffness=400.0, damping=40.0),
+            ),
         ),
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(0.0, 0.0, 0.0),
@@ -109,14 +131,10 @@ class ClutterEnvCfg(DirectRLEnvCfg):
 
     object_cfg: RigidObjectCfg = RigidObjectCfg(
         prim_path="/World/envs/env_.*/Object",
-        spawn=sim_utils.CuboidCfg(
-            size=(0.06, 0.06, 0.08),
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False),
-            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
-            physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=1.0, dynamic_friction=1.0),
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.9, 0.35, 0.2)),
-        ),
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.55, -0.10, 0.08), rot=(1.0, 0.0, 0.0, 0.0)),
+        # Object prims are spawned manually in ClutterEnv._spawn_multi_object_assets().
+        # Each env gets one true UnionYCB mesh converted from the corresponding DemoGrasp URDF.
+        spawn=None,
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.1), rot=(1.0, 0.0, 0.0, 0.0)),
     )
 
     table_cfg: RigidObjectCfg = RigidObjectCfg(
@@ -134,7 +152,7 @@ class ClutterEnvCfg(DirectRLEnvCfg):
     # -----------------------------
     # DemoGrasp 任务语义参数
     # -----------------------------
-    asset_root = str(_ASSET_ROOT)
+    asset_root = str(ASSET_ROOT)
     tracking_reference_file = str(_TRACKING_REFERENCE)
     tracking_reference_lift_timestep = 13
 
@@ -182,11 +200,13 @@ class ClutterEnvCfg(DirectRLEnvCfg):
     hand_dof_start_idx = 7
     obs_type = "armdof+handdof+eefpose+objpose"
 
-    # 旧 grasp.yaml 里的资产列表设置。当前 clutter_env.py 先使用 cuboid 占位物体；
-    # 这些路径保留下来，供后续把 Object 扩展成 YCB 多物体/RigidObjectCollection。
+    # 旧 grasp.yaml 里的资产列表设置。当前实现按 DemoGrasp 的规则：
+    # env i 使用 object_list[i % len(object_list)]。
     multi_object = True
     object_list_file = str(_OBJECT_LIST)
     object_name_list_file = str(_OBJECT_NAME_LIST)
+    object_usd_cache_dir = str(_OBJECT_USD_CACHE)
+    object_mass = 0.2
     use_distractor_objects = False
     num_distractor_objects = 5
     random_remove_distractor_objects = 0.5

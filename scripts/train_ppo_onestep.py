@@ -79,7 +79,7 @@ from isaaclab_tasks.utils import parse_env_cfg # 解析并合并环境配置项�
 import Clutter.tasks.direct.clutter  # noqa: F401
 from Clutter.algo import ppo_onestep
 from Clutter.tasks.direct.clutter.agents.ppo_onestep_cfg import default_ppo_onestep_cfg
-from Clutter.utils.paths import LOGS_DIR, PROJECT_ROOT as CLUTTER_ROOT
+from Clutter.utils.paths import CLUTTER_ROOT, LOGS_DIR
 
 
 def infer_planner_action_dim(env) -> int:
@@ -90,9 +90,9 @@ def infer_planner_action_dim(env) -> int:
     模板环境，则退回到 Gym action_space，方便迁移期间做最小 smoke test
     """
     raw_env = env.unwrapped if hasattr(env, "unwrapped") else env #去除 Gymnasium 的 wrapper，获取最底层的 IsaacLab 环境实例
-    # 检查环境配置。由于这是“one-step”策略（单步规划抓取），它强制要求环境必须启用随机追踪参考配置。如果没有，直接抛出异常
+    # one-step PPO 通常配合随机 reference 训练；迁移第一阶段允许关闭，只给出提示而不中断 smoke test。
     if hasattr(raw_env, "randomize_tracking_reference") and not raw_env.randomize_tracking_reference:
-        raise RuntimeError("ppo_onestep expects randomize_tracking_reference=True on the grasp environment.")
+        print("[WARN] randomize_tracking_reference=False; one-step PPO will train on a fixed reference trajectory.")
 
     # 针对项目内自定义环境的特殊逻辑
     if hasattr(raw_env, "generate_reaching_plan_idx"):
@@ -181,4 +181,3 @@ if __name__ == "__main__": # 确保只有在直接运行该脚本时才会执行
     finally:
         # 无论训练是否异常退出，都关闭 Isaac Sim 应用，释放 GPU/窗口资源。
         simulation_app.close()
-

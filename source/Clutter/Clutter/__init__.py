@@ -3,12 +3,12 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""
-Python module serving as a project/extension template.
+"""Clutter IsaacLab extension package.
+
+导入 `Clutter` 包时只注册任务环境。模板 UI extension 会创建窗口和 UI 依赖，
+命令行训练/播放脚本并不需要它；保持包入口轻量，可以减少 Gym 环境解析阶段
+因为额外 UI 模块导致的启动/关闭问题。
 """
 
 # Register Gym environments.
 from .tasks import *
-
-# Register UI extensions.
-from .ui_extension_example import *
