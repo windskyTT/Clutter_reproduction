@@ -22,6 +22,9 @@ CLUTTER_ROOT = PROJECT_ROOT
 # 资产目录：URDF、mesh、reference、checkpoint 都放在这里。
 ASSETS_DIR = PROJECT_ROOT / "assets"
 ASSET_ROOT = ASSETS_DIR
+# USD 资产目录：存放已转换的机器人/物体 USD，供 hand config 和后续 USD 加载路径复用。
+ASSETS_USD_DIR = PROJECT_ROOT / "assets_usd"
+ASSET_USD_ROOT = ASSETS_USD_DIR
 # reference grasp pkl 目录：由 clutter_env_cfg.py 指向这里。
 REFERENCE_ROOT = ASSETS_DIR / "references"
 # 策略权重目录：播放脚本默认从这里读取 checkpoint。
@@ -37,6 +40,8 @@ __all__ = [
     "CLUTTER_ROOT",
     "ASSETS_DIR",
     "ASSET_ROOT",
+    "ASSETS_USD_DIR",
+    "ASSET_USD_ROOT",
     "REFERENCE_ROOT",
     "CHECKPOINT_DIR",
     "CHECKPOINT_ROOT",

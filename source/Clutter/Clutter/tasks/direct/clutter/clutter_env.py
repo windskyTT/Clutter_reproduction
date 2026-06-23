@@ -25,7 +25,9 @@ import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.converters import MeshConverter, MeshConverterCfg
+from isaaclab.sim.utils import bind_physics_material, get_all_matching_child_prims
 from isaaclab.utils.math import quat_apply, quat_conjugate, quat_from_angle_axis, quat_from_euler_xyz, quat_mul, sample_uniform
+from pxr import UsdPhysics
 
 from .clutter_env_cfg import ClutterEnvCfg
 from .reward import REWARD_DICT
@@ -51,6 +53,19 @@ class ClutterEnv(DirectRLEnv):
         self._init_robot_metadata()
         self._load_tracking_references()
         self._init_runtime_buffers()
+
+    @property
+    def max_episode_length(self) -> int:
+        """Use the DemoGrasp control-step count directly.
+
+        IsaacLab's base property derives this value from seconds with
+        ``ceil(episode_length_s / step_dt)``.  For DemoGrasp's 50 control-step
+        clips that can become 51 because of floating-point roundoff, which
+        shifts the replay/reset timing and makes the play script end on a reset
+        frame instead of the visible grasp frame.
+        """
+
+        return int(self.cfg.episode_length_steps)
 
     def init_configs(self):
         """整理任务运行时常用配置。
@@ -158,6 +173,10 @@ class ClutterEnv(DirectRLEnv):
         self.num_hand_dofs = len(self.hand_dof_indices)
 
         self.eef_body_id = self._find_body_id(self.cfg.eef_link_name)
+        # IsaacLab/PhysX Jacobian rows omit the fixed base link.  The robot is
+        # spawned with fix_base=True, so body state indices and Jacobian body
+        # indices are offset by one.
+        self.eef_jacobian_body_id = max(self.eef_body_id - 1, 0)
         self.palm_body_id = self._find_body_id(self.cfg.palm_link_name)
         self.fingertip_body_ids = self._find_body_ids(self.cfg.fingertip_link_names)
         self.num_fingers = len(self.fingertip_body_ids)
@@ -356,22 +375,51 @@ class ClutterEnv(DirectRLEnv):
 
         for env_id, object_file in enumerate(env_object_files):
             usd_path = self._ensure_object_mesh_usd(object_file)
+            prim_path = f"/World/envs/env_{env_id}/Object"
             spawn_cfg = sim_utils.UsdFileCfg(
                 usd_path=usd_path,
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(
                     rigid_body_enabled=True,
                     disable_gravity=False,
-                    max_depenetration_velocity=1.0,
+                    angular_damping=float(self.cfg.object_angular_damping),
+                    max_depenetration_velocity=float(self.cfg.object_max_depenetration_velocity),
                 ),
                 mass_props=sim_utils.MassPropertiesCfg(mass=float(self.cfg.object_mass)),
-                collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+                collision_props=sim_utils.CollisionPropertiesCfg(
+                    collision_enabled=True,
+                    contact_offset=float(self.cfg.object_contact_offset),
+                    rest_offset=float(self.cfg.object_rest_offset),
+                ),
             )
             spawn_cfg.func(
-                f"/World/envs/env_{env_id}/Object",
+                prim_path,
                 spawn_cfg,
                 translation=self.cfg.object_cfg.init_state.pos,
                 orientation=self.cfg.object_cfg.init_state.rot,
             )
+            self._bind_object_physics_material(prim_path)
+
+    def _bind_object_physics_material(self, prim_path: str) -> None:
+        """Apply DemoGrasp's object rigid-shape friction to spawned USD colliders."""
+
+        material_cfg = sim_utils.RigidBodyMaterialCfg(
+            static_friction=float(self.cfg.object_friction),
+            dynamic_friction=float(self.cfg.object_friction),
+            restitution=0.0,
+        )
+        material_path = f"{prim_path}/physicsMaterial"
+        material_cfg.func(material_path, material_cfg)
+
+        collision_prims = get_all_matching_child_prims(
+            prim_path,
+            predicate=lambda prim: prim.HasAPI(UsdPhysics.CollisionAPI),
+        )
+        if not collision_prims:
+            bind_physics_material(prim_path, material_path)
+            return
+
+        for prim in collision_prims:
+            bind_physics_material(str(prim.GetPath()), material_path)
 
     def _ensure_object_mesh_usd(self, object_file: str) -> str:
         """Convert one DemoGrasp object URDF's mesh to a cached IsaacLab USD file."""
@@ -382,7 +430,8 @@ class ClutterEnv(DirectRLEnv):
         usd_dir.mkdir(parents=True, exist_ok=True)
 
         safe_name = re.sub(r"[^0-9a-zA-Z_]+", "_", urdf_path.stem)
-        usd_name = f"obj_{safe_name}_rigid_v1.usd"
+        # v2 includes the old DemoGrasp object friction/contact settings in the cached USD.
+        usd_name = f"obj_{safe_name}_rigid_v2.usd"
         converter_cfg = MeshConverterCfg(
             asset_path=str(mesh_path),
             usd_dir=str(usd_dir),
@@ -394,9 +443,16 @@ class ClutterEnv(DirectRLEnv):
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 rigid_body_enabled=True,
                 disable_gravity=False,
-                max_depenetration_velocity=1.0,
+                angular_damping=float(self.cfg.object_angular_damping),
+                max_depenetration_velocity=float(self.cfg.object_max_depenetration_velocity),
+                solver_position_iteration_count=8,
+                solver_velocity_iteration_count=0,
             ),
-            collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+            collision_props=sim_utils.CollisionPropertiesCfg(
+                collision_enabled=True,
+                contact_offset=float(self.cfg.object_contact_offset),
+                rest_offset=float(self.cfg.object_rest_offset),
+            ),
             mesh_collision_props=sim_utils.ConvexHullPropertiesCfg(),
         )
         return MeshConverter(converter_cfg).usd_path
@@ -510,7 +566,10 @@ class ClutterEnv(DirectRLEnv):
         """Compute termination and timeout flags."""
 
         self._compute_intermediate_values()
-        time_out = self.episode_length_buf >= self.max_episode_length - 1
+        # DirectRLEnv increments episode_length_buf before calling _get_dones().
+        # Timeout at max_episode_length keeps the DemoGrasp t=max-2 success frame
+        # visible instead of immediately auto-resetting to the initial pose.
+        time_out = self.episode_length_buf >= self.max_episode_length
 
         object_dropped = self.object_pos[:, 2] < self.table_heights + self.cfg.fall_height
         workspace_low = self.ee_safe_workspace[0]
@@ -901,7 +960,7 @@ class ClutterEnv(DirectRLEnv):
 
         try:
             jacobians = self.robot.root_physx_view.get_jacobians()
-            j_eef = jacobians[:, self.eef_body_id, :, self.arm_dof_indices]
+            j_eef = jacobians[:, self.eef_jacobian_body_id, :, self.arm_dof_indices]
         except Exception:
             return torch.zeros((self.num_envs, self.num_arm_dofs), dtype=torch.float, device=self.device)
 
