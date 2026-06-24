@@ -137,6 +137,7 @@ class PPO:
         self.tot_timesteps = 0
         self.tot_time = 0
         self.is_testing = _cfg_get(train_param, "test")
+        self.debug_reference_actions = bool(_cfg_get(train_param, "debug_reference_actions", self.is_testing))
         self.current_learning_iteration = 0
         if not self.is_testing:
             if SummaryWriter is None:
@@ -278,6 +279,12 @@ class PPO:
 
         for step_id in range(max_episode_length):
             env_action = self.vec_env.compute_reference_actions()
+            if self.debug_reference_actions and step_id in (0, 1, 5, 10, 20, 40):
+                print(
+                    f"[DEBUG] replay step={step_id}, action_abs_mean={env_action.abs().mean().item():.4f}, "
+                    f"action_min={env_action.min().item():.4f}, action_max={env_action.max().item():.4f}",
+                    flush=True,
+                )
             last_obs, last_reward, last_done, last_extras = self._parse_step(self.vec_env.step(env_action))
             # DemoGrasp 在接近 episode 末尾统计是否抓取成功。
             if step_id >= max_episode_length - 2:

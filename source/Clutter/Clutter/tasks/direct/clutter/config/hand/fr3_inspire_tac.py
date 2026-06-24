@@ -49,8 +49,8 @@ DEFAULT_JOINT_ORDER = ARM_DOF_NAMES + (
 
 HAND_CFG = HandCfg(
     name="fr3_inspire_tac",
-    robot_asset_file="inspire_tac/fr3_inspire_tac_L_right_safety.usd",
-    robot_asset_file_visual_realistic="inspire_tac/fr3_inspire_tac_L_right_safety_visual_realistic.usd",
+    robot_asset_file="inspire_tac/fr3_inspire_tac_L_right_safety.urdf",
+    robot_asset_file_visual_realistic="inspire_tac/fr3_inspire_tac_L_right_safety_visual_realistic.urdf",
     arm_dof_names=ARM_DOF_NAMES,
     active_hand_dof_names=ACTIVE_HAND_DOF_NAMES,
     passive_joint_mimic=PASSIVE_JOINT_MIMIC,

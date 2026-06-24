@@ -211,6 +211,10 @@ class ClutterEnvCfg(DirectRLEnvCfg):
     num_distractor_objects = 5
     random_remove_distractor_objects = 0.5
     object_friction = 1.0
+    object_angular_damping = 0.0
+    object_max_depenetration_velocity = 1000.0
+    object_contact_offset = 0.002
+    object_rest_offset = 0.0
 
     clip_actions = 1.0
     clip_observations = 5.0

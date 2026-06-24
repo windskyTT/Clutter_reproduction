@@ -228,8 +228,12 @@ class ClutterEnv(DirectRLEnv):
         self.obs_dict = {"policy": self.obs_tensor}
 
         pcl_points = self.points_per_object if self.enable_pcl else 0
-        self.object_files = getattr(self, "_scene_object_files", self._load_object_file_list())
-        self.env_object_files = self._select_object_files_for_envs(self.object_files)
+        self.object_files = getattr(self, "_scene_object_files", None)
+        if self.object_files is None:
+            self.object_files = self._load_object_file_list()
+        self.env_object_files = getattr(self, "_scene_env_object_files", None)
+        if self.env_object_files is None:
+            self.env_object_files = self._select_object_files_for_envs(self.object_files)
         self.object_pcl_buf = torch.zeros((self.num_envs, pcl_points, 3), dtype=torch.float, device=self.device)
         if self.enable_pcl:
             self._load_object_point_cloud_buffer()
@@ -341,14 +345,20 @@ class ClutterEnv(DirectRLEnv):
         `union_ycb_unidex/pointclouds/002_master_chef_can.npy`。
         """
 
-        object_list_path = self.cfg.object_list_file
-        try:
-            with open(object_list_path, "r", encoding="utf-8") as f:
-                object_names = [line.strip()[2:].strip() for line in f if line.strip().startswith("- ")]
-        except FileNotFoundError:
-            object_names = []
+        object_list_path = Path(self.cfg.object_list_file)
+        if not object_list_path.is_file():
+            raise FileNotFoundError(f"Object list file not found: {object_list_path}")
 
-        return [f"union_ycb_unidex/urdf/{name}" for name in sorted(object_names)]
+        with object_list_path.open("r", encoding="utf-8") as f:
+            object_names = [line.strip()[2:].strip() for line in f if line.strip().startswith("- ")]
+
+        if not object_names:
+            raise RuntimeError(f"Object list file is empty or has no '- ' entries: {object_list_path}")
+
+        object_files = [f"union_ycb_unidex/urdf/{name}" for name in sorted(object_names)]
+        print(f"[DEBUG] Loaded {len(object_files)} object URDF entries from {object_list_path}", flush=True)
+        print(f"[DEBUG] First object file: {object_files[0]}", flush=True)
+        return object_files
 
     def _select_object_files_for_envs(self, object_files: list[str]) -> list[str]:
         """Return the DemoGrasp env-to-object assignment.
@@ -376,6 +386,8 @@ class ClutterEnv(DirectRLEnv):
         for env_id, object_file in enumerate(env_object_files):
             usd_path = self._ensure_object_mesh_usd(object_file)
             prim_path = f"/World/envs/env_{env_id}/Object"
+            if env_id < 3:
+                print(f"[DEBUG] Spawning object env={env_id}: {object_file} -> {usd_path} at {prim_path}", flush=True)
             spawn_cfg = sim_utils.UsdFileCfg(
                 usd_path=usd_path,
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(
