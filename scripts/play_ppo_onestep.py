@@ -45,6 +45,8 @@ def parse_args() -> argparse.Namespace:
     )
     # 评估的轮数。默认执行 10 轮 one-step 抓取评估，覆盖所有测试对象。
     parser.add_argument("--episodes", type=int, default=10, help="Number of one-step evaluation rounds.")
+    parser.add_argument("--sleep_per_step", type=float, default=0.0, help="Sleep seconds after each replay step.")
+    parser.add_argument("--hold_after_round", type=float, default=0.0, help="Sleep seconds after each eval round.")
     parser.add_argument(
         "--checkpoint_preset",
         type=str,
@@ -207,7 +209,11 @@ def main() -> None:
             num_envs=args_cli.num_envs,
             use_fabric=not args_cli.disable_fabric,
         )
-        train_overrides = {"times_testing_all_objects": args_cli.episodes}
+        train_overrides = {
+            "times_testing_all_objects": args_cli.episodes,
+            "sleep_per_step": args_cli.sleep_per_step,
+            "hold_after_round": args_cli.hold_after_round,
+        }
         if should_apply_demograsp_inspire_preset(checkpoint):
             log_stage("Applying DemoGrasp Inspire vision checkpoint preset.")
             train_overrides = {

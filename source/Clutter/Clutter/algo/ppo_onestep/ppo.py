@@ -93,6 +93,8 @@ class PPO:
         self.is_testing_all_objects = _cfg_get(train_param, "is_testing_all_objects", False)
         self.times_testing_all_objects = _cfg_get(train_param, "times_testing_all_objects", 10)
         self.plan = _cfg_get(train_param, "plan", False)
+        self.sleep_per_step = float(_cfg_get(train_param, "sleep_per_step", 0.0))
+        self.hold_after_round = float(_cfg_get(train_param, "hold_after_round", 0.0))
 
         # IsaacLab observation_space 可能是 Dict({"policy": ...})，这里抽出 policy branch。
         self.observation_space = self._policy_space(getattr(self.vec_env, "observation_space", None))
@@ -272,6 +274,14 @@ class PPO:
         # 抓取环境路径：policy 只负责生成规划参数，实际低层控制由 reference action 执行。
         self.vec_env.generate_reaching_plan_idx(self._all_env_ids, actions=actions)
         max_episode_length = int(getattr(self.vec_env, "max_episode_length", 1))
+        start_eef = getattr(self.vec_env, "eef_pos", None)
+        robot = getattr(self.vec_env, "robot", None)
+        robot_data = getattr(robot, "data", None)
+        start_joint = getattr(robot_data, "joint_pos", None)
+        if start_eef is not None:
+            start_eef = start_eef.clone()
+        if start_joint is not None:
+            start_joint = start_joint.clone()
         last_obs = None
         last_reward = torch.zeros(self.num_envs, device=self.device)
         last_done = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
@@ -286,6 +296,19 @@ class PPO:
                     flush=True,
                 )
             last_obs, last_reward, last_done, last_extras = self._parse_step(self.vec_env.step(env_action))
+            if self.debug_reference_actions and step_id in (0, 1, 5, 10, 20, 40):
+                eef_move = -1.0
+                joint_move = -1.0
+                if start_eef is not None and hasattr(self.vec_env, "eef_pos"):
+                    eef_move = (self.vec_env.eef_pos - start_eef).norm(dim=-1).mean().item()
+                if start_joint is not None and hasattr(self.vec_env, "robot"):
+                    joint_move = (self.vec_env.robot.data.joint_pos - start_joint).abs().mean().item()
+                print(
+                    f"[DEBUG] replay state step={step_id}, eef_move={eef_move:.5f}, joint_move={joint_move:.5f}",
+                    flush=True,
+                )
+            if self.sleep_per_step > 0:
+                time.sleep(self.sleep_per_step)
             # DemoGrasp 在接近 episode 末尾统计是否抓取成功。
             if step_id >= max_episode_length - 2:
                 break
@@ -326,6 +349,8 @@ class PPO:
                 actions = self.actor_critic(current_obs, current_states, inference=True)
                 _, rewards, _, _ = self._execute_plan_or_native_step(actions)
                 print(f"Round {round_idx}: mean one-step reward/success = {rewards.float().mean().item():.4f}")
+                if self.hold_after_round > 0:
+                    time.sleep(self.hold_after_round)
 
     def _run_train(self) -> None:
         """Collect one-step rollouts and update the policy."""

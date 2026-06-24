@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
+import omni.usd
 import torch
 
 import isaaclab.sim as sim_utils
@@ -27,7 +28,7 @@ from isaaclab.envs import DirectRLEnv
 from isaaclab.sim.converters import MeshConverter, MeshConverterCfg
 from isaaclab.sim.utils import bind_physics_material, get_all_matching_child_prims
 from isaaclab.utils.math import quat_apply, quat_conjugate, quat_from_angle_axis, quat_from_euler_xyz, quat_mul, sample_uniform
-from pxr import UsdPhysics
+from pxr import UsdGeom, UsdPhysics
 
 from .clutter_env_cfg import ClutterEnvCfg
 from .reward import REWARD_DICT
@@ -409,6 +410,23 @@ class ClutterEnv(DirectRLEnv):
                 translation=self.cfg.object_cfg.init_state.pos,
                 orientation=self.cfg.object_cfg.init_state.rot,
             )
+            stage = omni.usd.get_context().get_stage()
+            prim = stage.GetPrimAtPath(prim_path)
+            if not prim.IsValid():
+                raise RuntimeError(f"Spawned object prim is invalid: {prim_path}")
+            mesh_prims = get_all_matching_child_prims(
+                prim_path,
+                predicate=lambda prim: prim.IsA(UsdGeom.Mesh),
+            )
+            if prim.IsA(UsdGeom.Mesh):
+                mesh_prims = [prim, *mesh_prims]
+            if env_id < 3:
+                print(
+                    f"[DEBUG] Object prim valid env={env_id}: {prim_path}, mesh_prims={len(mesh_prims)}",
+                    flush=True,
+                )
+            if len(mesh_prims) == 0:
+                raise RuntimeError(f"Object prim has no UsdGeom.Mesh prims: {prim_path} from {usd_path}")
             self._bind_object_physics_material(prim_path)
 
     def _bind_object_physics_material(self, prim_path: str) -> None:
@@ -467,7 +485,15 @@ class ClutterEnv(DirectRLEnv):
             ),
             mesh_collision_props=sim_utils.ConvexHullPropertiesCfg(),
         )
-        return MeshConverter(converter_cfg).usd_path
+        converter = MeshConverter(converter_cfg)
+        usd_path = Path(converter.usd_path)
+        if not usd_path.is_file():
+            raise FileNotFoundError(f"Converted object USD was not created: {usd_path}")
+        usd_size = usd_path.stat().st_size
+        if usd_size < 1024:
+            raise RuntimeError(f"Converted object USD is suspiciously small: {usd_path} ({usd_size} bytes)")
+        print(f"[DEBUG] Object USD ready: {usd_path} size={usd_size}", flush=True)
+        return str(usd_path)
 
     @staticmethod
     def _read_urdf_mesh(urdf_path: Path) -> tuple[Path, tuple[float, float, float]]:
@@ -482,11 +508,23 @@ class ClutterEnv(DirectRLEnv):
         mesh_path = Path(filename)
         if not mesh_path.is_absolute():
             mesh_path = (urdf_path.parent / mesh_path).resolve()
+        if not mesh_path.is_file():
+            raise FileNotFoundError(f"Object mesh file not found: {mesh_path} from {urdf_path}")
+        mesh_head = mesh_path.read_bytes()[:80]
+        if mesh_head.startswith(b"version https://git-lfs.github.com/spec/v1"):
+            raise RuntimeError(
+                f"Object mesh is a Git LFS pointer, not real geometry: {mesh_path}. "
+                "Run git lfs pull for assets or restore the real DemoGrasp assets."
+            )
+        mesh_size = mesh_path.stat().st_size
+        if mesh_size < 1024:
+            raise RuntimeError(f"Object mesh file is suspiciously small: {mesh_path} ({mesh_size} bytes)")
 
         scale_text = mesh.attrib.get("scale", "1.0 1.0 1.0")
         scale = tuple(float(x) for x in scale_text.split())
         if len(scale) != 3:
             raise RuntimeError(f"Invalid mesh scale in {urdf_path}: {scale_text!r}")
+        print(f"[DEBUG] Object mesh resolved: {mesh_path} size={mesh_size} scale={scale}", flush=True)
         return mesh_path, scale
 
     def _load_object_point_cloud_buffer(self):
@@ -663,13 +701,23 @@ class ClutterEnv(DirectRLEnv):
         object_state[:, 1] = env_origins[:, 1] + sample_uniform(
             float(self.reset_position_range[1, 0]), float(self.reset_position_range[1, 1]), (num_resets,), self.device
         )
-        object_state[:, 2] = env_origins[:, 2] + sample_uniform(
+        object_state[:, 2] = env_origins[:, 2] + table_height + sample_uniform(
             float(self.reset_position_range[2, 0]), float(self.reset_position_range[2, 1]), (num_resets,), self.device
         )
         object_state[:, 3:7] = self._sample_object_quat(num_resets)
         object_state[:, 7:].zero_()
         self.object.write_root_pose_to_sim(object_state[:, :7], env_ids)
         self.object.write_root_velocity_to_sim(object_state[:, 7:], env_ids)
+        if len(env_ids) > 0:
+            first = 0
+            env0 = int(env_ids[first].item())
+            print(
+                "[DEBUG] reset "
+                f"env={env0}, table_height={float(table_height[first].item()):.4f}, "
+                f"object_world_pos={object_state[first, 0:3].detach().cpu().tolist()}, "
+                f"object_local_pos={(object_state[first, 0:3] - env_origins[first]).detach().cpu().tolist()}",
+                flush=True,
+            )
 
         self.object_init_states[env_ids] = object_state
         self.object_init_states[env_ids, :3] -= env_origins
